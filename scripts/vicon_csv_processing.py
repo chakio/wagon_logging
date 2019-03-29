@@ -69,7 +69,7 @@ class PreProcessor(object):
 
     def changeStartTime(self):
         """
-        preprocessing
+        changeStartTime
         """
         self.timeInfo              = self.getStartAndEndIndexFromTimeGap(self.inputV)
         poseDataFromVicon          = self.getPoseFromViconData(self.inputPose,self.timeInfo)
@@ -83,6 +83,37 @@ class PreProcessor(object):
         print("poseDataFromViconDminished:"+str(len(poseDataFromViconDminished)))
         return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error
     
+    def changeCropTime(self,fileName):
+        """
+        changeCropTime
+        """
+        self.setCropTime(fileName)
+        self.timeInfo              = self.getStartAndEndIndex(self.inputV,self.inputTimeFrame)
+        poseDataFromVicon          = self.getPoseFromViconData(self.inputPose,self.timeInfo)
+        poseDataFromRos            = self.processRosData(self.inputPoseRos)
+        poseDataFromRosObserved    = self.processRosObservedData(self.inputPoseRosObserved)
+        poseDataFromViconDminished = self.reductSampling(poseDataFromVicon,poseDataFromRos)
+        error                      = self.getError(poseDataFromViconDminished,poseDataFromRos)
+
+        print("poseDataFromRos:"+str(len(poseDataFromRos)))
+        print("poseDataFromVicon:"+str(len(poseDataFromVicon)))
+        print("poseDataFromViconDminished:"+str(len(poseDataFromViconDminished)))
+        return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error
+    
+    def setCropTime(self,fileName):
+        """
+        setCropTime
+        """
+        print("please input start time[s]")
+        startTime = float(str(raw_input()))
+        print(startTime)
+        print("please input end time[s]")
+        endTime = float(str(raw_input()))
+        print(endTime)
+        cropTime =[startTime,endTime]
+        df= pd.DataFrame({"cropFrame":cropTime })
+        df.to_csv(fileName+"CropTime.csv")
+
     def cropData(self,datas,cropTimes):
         poseDataCropedFromViconCroped         = self.getCropedData(datas[0],cropTimes)
         poseDataCropedFromRosCroped           = self.getCropedData(datas[1],cropTimes)
@@ -108,14 +139,20 @@ class PreProcessor(object):
             print(timeInfo)
         else:
             start = False
+            startIndex = 0
+            endIndex = len(inputData)
             for columNum in range(len(inputData)):
                 voltage = inputData[columNum,2]
                 if start != True and voltage >0.3:
+                    #print("a")
                     startIndex = inputData[columNum,0]
                     start = True
                 elif start == True and voltage <0.3:
                     endIndex = inputData[columNum,0]
                     break
+            if startIndex == np.nan:
+                startIndex = 0
+            #print(startIndex)
             timeInfo = [startIndex,endIndex]
             print(timeInfo)
         
@@ -182,7 +219,9 @@ class PreProcessor(object):
 
         poses = []
         time = []
+        robotPoseData = []
         for columData in processedData:
+            
             wagon=[]
             for frameNum in range(3):
                 framePos = [columData[2+3*frameNum],columData[2+3*frameNum+1]]
@@ -192,6 +231,21 @@ class PreProcessor(object):
             poseData = [columData[0]*10/1000,pose[0],pose[1],pose[2]]
             #print (poseData)
             poses.append(poseData)
+       
+            """
+            robot = []
+            for frameNum in range(2):
+                robotFramePos = [columData[15+3*frameNum],columData[15+3*frameNum+1]]
+                robot.append(robotFramePos)
+                print(robotFramePos)
+                print(str(15+3*frameNum)+","+str(15+3*frameNum+1))
+            #print(len(columData))
+            robotPose = self.calcurateRobotPose(robot)
+            robotPoseData = [columData[0]*10/1000,pose[0],pose[1],pose[2]]
+            #print(robotPose)
+            #print (poseData)
+        print("RobotPose:x:"+str(robotPoseData[0])+" y:"+str(robotPoseData[1])+" z:"+str(robotPoseData[2]))     
+        """
         npPoses = np.array(poses)
         print (len(npPoses))
         return npPoses
@@ -273,6 +327,24 @@ class PreProcessor(object):
            pass 
         return pose
 
+    def calcurateRobotPose(self,robot):
+        #wagon 0:leftfront,1:rightfront
+        pose =[0,0,0]
+        pose[0] = 0.5*(robot[0][0]+robot[1][0])
+        pose[1] = 0.5*(robot[0][1]+robot[1][1])
+        
+        pose[2] = math.atan2(robot[0][1]-robot[1][1],robot[0][0]-robot[1][0])
+
+        if pose[2]<-math.pi:
+            pose[2] += 2*math.pi
+        elif pose[2]>math.pi:
+            pose[2] -= 2*math.pi
+
+        #print("nan:"+str(angle1)+" "+str(angle2))
+        if pose[2]>math.pi or pose[2]<-math.pi :
+           pass 
+        return pose
+
     def reductSampling(self, viconData,rosData):
         """
         reduction sampling of vicon data based on ros data  
@@ -300,7 +372,7 @@ class PreProcessor(object):
         #print (viconData)
         return npOutputData
 
-    def getCropedData(self,data,cropTimes)
+    def getCropedData(self,data,cropTimes):
         """
         reduction sampling of vicon data based on ros data  
         Parameters
@@ -313,9 +385,11 @@ class PreProcessor(object):
         npPoseData : numpy.ndarray
         [time,x,y,ditance,theta]
         """
-        poseDatas =[]
+        poseDatas = []
         for dataNum in range(len(data)):
-            if data[dataNum,0]>=cropData[0] and data[dataNum,0]<=cropData[1]:
+            if data[dataNum,0]>=cropTimes[0,1] and data[dataNum,0]<=cropTimes[1,1]:
+                   #print(data[dataNum,0])
+                   data[dataNum,0] = data[dataNum,0] - cropTimes[0,1]
                    poseDatas.append(data[dataNum,:])
         npPoseData = np.array(poseDatas)
         #print (viconData)
@@ -367,8 +441,8 @@ class Drawer(object):
     
     def draw(self):
         self.drawPose(self.poseFromVicon,self.poseFromRos)
-        self.drawEachAxis(self.poseFromVicon,self.poseFromRos)
-        self.drawEachAxis(self.poseFromVicon,self.poseFromRosObserved)
+        self.drawEachAxis(self.poseFromVicon,self.poseFromRos,"estimated")
+        self.drawEachAxis(self.poseFromVicon,self.poseFromRosObserved,"observed")
         self.drawError(self.error)
         self.figShow()
 
@@ -412,7 +486,7 @@ class Drawer(object):
         path_plot.set_aspect('equal')
 
 
-    def drawEachAxis(self,inputData,inputDataRos):
+    def drawEachAxis(self,inputData,inputDataRos,mode):
 
         print(len(inputData))
         print(len(inputData[0]))
@@ -422,7 +496,9 @@ class Drawer(object):
         maxTime = np.max(inputData[:,0])
 
         fig1 = plt.figure()
+
         x_plot = fig1.add_subplot(311)
+        x_plot.set_title(mode)
         x_plot.plot(inputData[:,0],inputData[:,1])
         x_plot.plot(inputDataRos[:,0],inputDataRos[:,1])
         x_plot.set_xlim(0,maxTime)
@@ -505,18 +581,22 @@ class Saver():
 def main():
     print("Please input trial name")
     trialName = str(raw_input())
-    absolutePath            = ("/home/ytnpc2017c/wagon_vicon_log2/") 
-    pathInputV              = absolutePath + trialName + "V.csv" 
-    pathInputPose           = absolutePath + trialName + "Pose.csv" 
-    pathInputRos            = absolutePath + trialName + "Ros.csv" 
-    pathInputRosObserved    = absolutePath + trialName + "RosObserve.csv" 
-    pathTimeFrame           = absolutePath + trialName + "TimeFrame.csv"
-    pathCropTimes           = absolutePath + trialName + "CropTime.csv" 
+    relativePath            = ("../data/") 
+    
+    pathInputV              = relativePath + trialName + "V.csv" 
+    pathInputPose           = relativePath + trialName + "Pose.csv" 
+    pathInputRos            = relativePath + trialName + "Ros.csv"   
+    pathInputRosObserved    = relativePath + trialName + "RosObserve.csv"  
+    pathTimeFrame           = relativePath + trialName + "TimeFrame.csv"
+    pathCropTimes           = relativePath + trialName + "CropTime.csv" 
 
-
+    print("load V")
     inputV                  = loadCsv(pathInputV)
+    print("load Pose")
     inputPose               = loadCsv(pathInputPose)
+    print("load Ros")
     inputPoseRos            = loadCsv(pathInputRos)
+    print("load RosObserve")
     inputPoseRosObserved    = loadCsv(pathInputRosObserved)
     try:
         inputTimeFrame  = loadCsv(pathTimeFrame)
@@ -533,9 +613,10 @@ def main():
     # draw
     drawer = Drawer(datas )
     drawer.draw()
-    if len(inputCropTimes)>0
+    if len(inputCropTimes)>0:
         datas = preProcessor.cropData(datas,inputCropTimes)
-
+        drawer = Drawer(datas )
+        drawer.draw()
 
     while True:
         print("change start time? [y/n]" )
@@ -549,23 +630,58 @@ def main():
             preProcessor = PreProcessor([inputV,inputPose,inputPoseRos ,inputPoseRosObserved,inputTimeFrame])
             datas = preProcessor.changeStartTime()
             drawer.figClose()
-
+            
             # draw
             drawer = Drawer(datas )
             drawer.draw()
+            if len(inputCropTimes)>0:
+                datas = preProcessor.cropData(datas,inputCropTimes)
+                drawer = Drawer(datas )
+                drawer.draw()
 
             print("ok? [y/n]" )
             answer = str(raw_input())
             if answer == "y":
-                preProcessor.saveTimeInfo(absolutePath + trialName)
+                preProcessor.saveTimeInfo(relativePath + trialName)
                 print("saved")
                 break
             else:
-                pass
+                print("please retru")
 
-        else:
+        elif answer == "n":
             print("skip")
             break
+        else:
+            print("try again")
+
+    while True:
+        print("change crop time? [y/n]" )
+        answer = str(raw_input())
+        if answer == "y":
+
+            inputV                  = loadCsv(pathInputV)
+            inputPose               = loadCsv(pathInputPose)
+            inputPoseRos            = loadCsv(pathInputRos)
+            inputPoseRosObserved    = loadCsv(pathInputRosObserved)
+            
+            preProcessor = PreProcessor([inputV,inputPose,inputPoseRos ,inputPoseRosObserved,inputTimeFrame])
+            datas = preProcessor.changeCropTime(relativePath + trialName)
+            drawer.figClose()
+
+            # draw
+            drawer = Drawer(datas )
+            
+            drawer.draw()
+            if len(inputCropTimes)>0:
+                datas = preProcessor.cropData(datas,inputCropTimes)
+                drawer = Drawer(datas )
+                drawer.draw()
+
+        elif answer == "n":
+            print("skip")
+            break
+        else:
+            print("try again")
         
 
 
