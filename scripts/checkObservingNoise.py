@@ -13,7 +13,6 @@ import csv
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.stats as stats
 from mutagen.mp3 import MP3 as mp3
 import pygame
 
@@ -58,16 +57,16 @@ class PreProcessor(object):
         self.timeInfo              = self.getStartAndEndIndex(self.inputV,self.inputTimeFrame)
         poseDataFromVicon          = self.getPoseFromViconData(self.inputPose,self.timeInfo)
         poseDataFromRos            = self.processRosData(self.inputPoseRos)
-        poseDataFromRosObserved    = self.processRosData(self.inputPoseRosObserved)
+        poseDataFromRosObserved    = self.processRosObservedData(self.inputPoseRosObserved)
         poseDataFromViconDminished = self.reductSampling(poseDataFromVicon,poseDataFromRos)
         error                      = self.getError(poseDataFromViconDminished,poseDataFromRos)
-        errorObserved              = self.getError(poseDataFromViconDminished,poseDataFromRosObserved)
+        observedError              = self.getError(poseDataFromViconDminished,poseDataFromRosObserved)
         
         
         print("poseDataFromRos:"+str(len(poseDataFromRos)))
         print("poseDataFromVicon:"+str(len(poseDataFromVicon)))
         print("poseDataFromViconDminished:"+str(len(poseDataFromViconDminished)))
-        return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error,errorObserved 
+        return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error,observedError
 
     def changeStartTime(self):
         """
@@ -76,15 +75,14 @@ class PreProcessor(object):
         self.timeInfo              = self.getStartAndEndIndexFromTimeGap(self.inputV)
         poseDataFromVicon          = self.getPoseFromViconData(self.inputPose,self.timeInfo)
         poseDataFromRos            = self.processRosData(self.inputPoseRos)
-        poseDataFromRosObserved    = self.processRosData(self.inputPoseRosObserved)
+        poseDataFromRosObserved    = self.processRosObservedData(self.inputPoseRosObserved)
         poseDataFromViconDminished = self.reductSampling(poseDataFromVicon,poseDataFromRos)
         error                      = self.getError(poseDataFromViconDminished,poseDataFromRos)
-        errorObserve               = self.getError(poseDataFromViconDminished,poseDataFromRosObserved)
 
         print("poseDataFromRos:"+str(len(poseDataFromRos)))
         print("poseDataFromVicon:"+str(len(poseDataFromVicon)))
         print("poseDataFromViconDminished:"+str(len(poseDataFromViconDminished)))
-        return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error,errorObserve 
+        return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error
     
     def changeCropTime(self,fileName):
         """
@@ -94,15 +92,14 @@ class PreProcessor(object):
         self.timeInfo              = self.getStartAndEndIndex(self.inputV,self.inputTimeFrame)
         poseDataFromVicon          = self.getPoseFromViconData(self.inputPose,self.timeInfo)
         poseDataFromRos            = self.processRosData(self.inputPoseRos)
-        poseDataFromRosObserved    = self.processRosData(self.inputPoseRosObserved)
+        poseDataFromRosObserved    = self.processRosObservedData(self.inputPoseRosObserved)
         poseDataFromViconDminished = self.reductSampling(poseDataFromVicon,poseDataFromRos)
         error                      = self.getError(poseDataFromViconDminished,poseDataFromRos)
-        errorObserve               = self.getError(poseDataFromViconDminished,poseDataFromRosObserved)
 
         print("poseDataFromRos:"+str(len(poseDataFromRos)))
         print("poseDataFromVicon:"+str(len(poseDataFromVicon)))
         print("poseDataFromViconDminished:"+str(len(poseDataFromViconDminished)))
-        return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error,errorObserve 
+        return poseDataFromRos,poseDataFromRosObserved,poseDataFromViconDminished,error
     
     def setCropTime(self,fileName):
         """
@@ -123,8 +120,7 @@ class PreProcessor(object):
         poseDataCropedFromRosCroped           = self.getCropedData(datas[1],cropTimes)
         poseDataCropedFromRosObservedCroped   = self.getCropedData(datas[2],cropTimes)
         errorDataCroped                       = self.getCropedData(datas[3],cropTimes)
-        errorObservedDataCroped               = self.getCropedData(datas[4],cropTimes)
-        return poseDataCropedFromViconCroped,poseDataCropedFromRosCroped,poseDataCropedFromRosObservedCroped,errorDataCroped,errorObservedDataCroped
+        return poseDataCropedFromViconCroped,poseDataCropedFromRosCroped,poseDataCropedFromRosObservedCroped,errorDataCroped
 
     def getStartAndEndIndex(self,inputData,timeFrame):
         """
@@ -254,6 +250,32 @@ class PreProcessor(object):
         npPoses = np.array(poses)
         print (len(npPoses))
         return npPoses
+
+    def processRosObservedData(self,inputData):
+        """
+        repair pose data
+        Parameters
+        -------
+        inputData : numpy.ndarray
+       
+        Returns
+        -------
+        inputData : numpy.ndarray
+        """
+        poseDatas =[]
+        for poseNum in range(len(inputData)):
+            time = inputData[poseNum,1]
+            x = inputData[poseNum,2] * 1000 +180
+            y = inputData[poseNum,3] * 1000
+            theta = inputData[poseNum,4] -math.pi/2
+            if theta<-math.pi:
+                theta += 2*math.pi
+            elif theta>math.pi:
+                theta -= 2*math.pi
+            pose=[time,x,y,theta]
+            poseDatas.append(pose)
+        npPoseDatas = np.array(poseDatas)
+        return npPoseDatas
     
     def processRosData(self,inputData):
         """
@@ -271,8 +293,11 @@ class PreProcessor(object):
             time = inputData[poseNum,1]
             x = inputData[poseNum,2] * 1000
             y = inputData[poseNum,3] * 1000
-            theta = inputData[poseNum,4]
-           
+            theta = inputData[poseNum,4] -math.pi/2
+            if theta<-math.pi:
+                theta += 2*math.pi
+            elif theta>math.pi:
+                theta -= 2*math.pi
             pose=[time,x,y,theta]
             poseDatas.append(pose)
         npPoseDatas = np.array(poseDatas)
@@ -414,15 +439,14 @@ class Drawer(object):
         self.poseFromRosObserved    = datas[1]
         self.poseFromVicon          = datas[2]
         self.error                  = datas[3]
-        self.errorObserved          = datas[4]
+        self.error                  = datas[4]
     
     def draw(self):
         self.drawPose(self.poseFromVicon,self.poseFromRos)
         self.drawEachAxis(self.poseFromVicon,self.poseFromRos,"estimated")
         self.drawEachAxis(self.poseFromVicon,self.poseFromRosObserved,"observed")
         self.drawError(self.error)
-        self.drawError(self.errorObserved)
-        self.drawHistgram(self.errorObserved)
+        self.drawError(self.errorObserve)
         self.figShow()
 
     def drawPose(self,inputData,inputDataRos):
@@ -530,23 +554,6 @@ class Drawer(object):
         distance_plot.set_title("Distance Error")
         distance_plot.set_xlabel("Time [s]")
         distance_plot.set_ylabel("Error [mm]")
-
-    def drawHistgram(self,errorData):
-        fig1 = plt.figure()
-        x_plot = fig1.add_subplot(411)
-        x_plot.hist(errorData[:,1],bins=20)
-        print("x")
-        print(stats.shapiro(errorData[:,1]))
-
-        y_plot = fig1.add_subplot(412)
-        y_plot.hist(errorData[:,2],bins=20)
-        print("y")
-        print(stats.shapiro(errorData[:,2]))
-
-        theta_plot = fig1.add_subplot(413)
-        theta_plot.hist(errorData[:,4],bins=20)
-        print("theta")
-        print(stats.shapiro(errorData[:,4]))
 
     def figShow(self):
         plt.pause(.01)
